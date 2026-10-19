@@ -1,8 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, NgZone, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import axios from 'axios';
-import { formatTaskLabel } from '../utils/legacy-format';
+import { AuthenticatedUser } from '../models/auth.models';
+import { DisplayTask, TaskRecord } from '../models/task.models';
+import { SessionService } from '../services/session.service';
+import { TasksService } from '../services/tasks.service';
+import { toUserFacingError } from '../utils/api-error';
 
 const STATUS_LABELS: Record<string, string> = {
   TODO: 'Por hacer',
@@ -20,51 +23,50 @@ const STATUS_LABELS: Record<string, string> = {
   styleUrl: './dashboard.component.css'
 })
 export class DashboardComponent implements OnInit {
-  tasks: any[] = [];
-  visibleTasks: any[] = [];
-  user: any = {};
-  loading: any = true;
-  error: any = '';
+  tasks: TaskRecord[] = [];
+  visibleTasks: DisplayTask[] = [];
+  user: AuthenticatedUser = { username: '' };
+  loading = true;
+  error = '';
 
-  constructor(private router: Router, private cdr: ChangeDetectorRef, private zone: NgZone) {}
+  constructor(
+    private readonly router: Router,
+    private readonly cdr: ChangeDetectorRef,
+    private readonly zone: NgZone,
+    private readonly sessionService: SessionService,
+    private readonly tasksService: TasksService
+  ) {}
 
-  statusLabel(status: string): string {
-    return STATUS_LABELS[(status || '').toUpperCase()] || status;
+  statusLabel(status: string | null | undefined): string {
+    if (!status) {
+      return '';
+    }
+    return STATUS_LABELS[status.toUpperCase()] ?? status;
   }
 
   async ngOnInit(): Promise<void> {
-    const token = localStorage.getItem('workshop_token');
-    this.user = JSON.parse(localStorage.getItem('workshop_user') || '{}');
-    if (!token) {
-      await this.router.navigate(['/login']);
-      return;
-    }
     try {
-      const response: any = await axios.get('http://localhost:8000/api/tasks?owner=' + (this.user.username || ''), {
-        headers: { Authorization: 'Bearer ' + token }
-      });
-      const tasks = response.data;
-      const tmp: any[] = [];
-      for (let i = 0; i < tasks.length; i++) {
-        if (tasks[i].status !== 'ARCHIVED') {
-          tasks[i].label = formatTaskLabel(tasks[i]);
-          tmp.push(tasks[i]);
-        }
+      const session = this.sessionService.getSession();
+      if (!session) {
+        await this.router.navigate(['/login']);
+        this.zone.run(() => {
+          this.loading = false;
+          this.cdr.detectChanges();
+        });
+        return;
       }
-      tmp.sort((a: any, b: any) => a.priority > b.priority ? -1 : 1);
-      // axios resuelve a veces fuera de la zona de Angular (más aún llegando
-      // por navegación desde el login): forzamos volver a entrar a la zona
-      // y disparamos detectChanges a mano para no depender de que Angular
-      // lo detecte solo.
+
+      this.user = session.user;
+      const taskLists = await this.tasksService.getTasks(session.user.username, session.token);
       this.zone.run(() => {
-        this.tasks = tasks;
-        this.visibleTasks = tmp;
+        this.tasks = taskLists.tasks;
+        this.visibleTasks = taskLists.visibleTasks;
         this.loading = false;
         this.cdr.detectChanges();
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.zone.run(() => {
-        this.error = error?.response?.data?.detail || error?.message || 'No se pudo cargar el dashboard';
+        this.error = toUserFacingError(error, 'tasks');
         this.loading = false;
         this.cdr.detectChanges();
       });
@@ -72,8 +74,18 @@ export class DashboardComponent implements OnInit {
   }
 
   async logout(): Promise<void> {
-    localStorage.removeItem('workshop_token');
-    localStorage.removeItem('workshop_user');
-    await this.router.navigate(['/login']);
+    try {
+      this.error = '';
+      this.sessionService.clearSession();
+      const navigated = await this.router.navigate(['/login']);
+      if (!navigated) {
+        throw new Error('Logout navigation was canceled');
+      }
+    } catch {
+      this.zone.run(() => {
+        this.error = 'No se pudo cerrar sesión. Inténtalo de nuevo.';
+        this.cdr.detectChanges();
+      });
+    }
   }
 }

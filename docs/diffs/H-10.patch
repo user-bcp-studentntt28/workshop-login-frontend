@@ -1,0 +1,25 @@
+diff --git a/src/app/dashboard/dashboard.component.ts b/src/app/dashboard/dashboard.component.ts
+index 2ee2bcc..7c7742c 100644
+--- a/src/app/dashboard/dashboard.component.ts
++++ b/src/app/dashboard/dashboard.component.ts
+@@ -74,7 +74,18 @@ export class DashboardComponent implements OnInit {
+   }
+ 
+   async logout(): Promise<void> {
+-    this.sessionService.clearSession();
+-    await this.router.navigate(['/login']);
++    try {
++      this.error = '';
++      this.sessionService.clearSession();
++      const navigated = await this.router.navigate(['/login']);
++      if (!navigated) {
++        throw new Error('Logout navigation was canceled');
++      }
++    } catch {
++      this.zone.run(() => {
++        this.error = 'No se pudo cerrar sesión. Inténtalo de nuevo.';
++        this.cdr.detectChanges();
++      });
++    }
+   }
+ }
