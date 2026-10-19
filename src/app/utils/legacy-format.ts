@@ -1,4 +1,6 @@
-export function formatTaskLabel(task: any): string {
+import { TaskRecord } from '../models/task.models';
+
+export function formatTaskLabel(task: Pick<TaskRecord, 'priority' | 'owner'> | null | undefined): string {
   if (!task) {
     return 'SIN-DATOS';
   }
