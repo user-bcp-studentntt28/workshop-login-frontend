@@ -45,14 +45,18 @@ export class DashboardComponent implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
-    const session = this.sessionService.getSession();
-    if (!session) {
-      await this.router.navigate(['/login']);
-      return;
-    }
-
-    this.user = session.user;
     try {
+      const session = this.sessionService.getSession();
+      if (!session) {
+        await this.router.navigate(['/login']);
+        this.zone.run(() => {
+          this.loading = false;
+          this.cdr.detectChanges();
+        });
+        return;
+      }
+
+      this.user = session.user;
       const taskLists = await this.tasksService.getTasks(session.user.username, session.token);
       this.zone.run(() => {
         this.tasks = taskLists.tasks;
@@ -70,7 +74,18 @@ export class DashboardComponent implements OnInit {
   }
 
   async logout(): Promise<void> {
-    this.sessionService.clearSession();
-    await this.router.navigate(['/login']);
+    try {
+      this.error = '';
+      this.sessionService.clearSession();
+      const navigated = await this.router.navigate(['/login']);
+      if (!navigated) {
+        throw new Error('Logout navigation was canceled');
+      }
+    } catch {
+      this.zone.run(() => {
+        this.error = 'No se pudo cerrar sesión. Inténtalo de nuevo.';
+        this.cdr.detectChanges();
+      });
+    }
   }
 }

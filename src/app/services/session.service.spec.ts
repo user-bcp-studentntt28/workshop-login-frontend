@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionService } from './session.service';
 
 class MemoryStorage implements Storage {
@@ -40,6 +40,82 @@ describe('SessionService', () => {
     Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: sessionStorageMock });
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorageMock });
     service = new SessionService();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ['workshop_token', false],
+    ['workshop_user', false],
+    ['workshop_token', true],
+    ['workshop_user', true]
+  ] as const)('H-11: invalidates session after failed %s write (existing=%s)', (key, existing) => {
+    if (existing) service.saveSession('previous-token', { username: 'previous' });
+    localStorageMock.setItem('workshop_preferences', 'saved-preferences');
+    const failure = new Error('Write denied');
+    const originalSet = sessionStorageMock.setItem.bind(sessionStorageMock);
+    vi.spyOn(sessionStorageMock, 'setItem').mockImplementation((name, value) => {
+      if (name === key) throw failure;
+      originalSet(name, value);
+    });
+    const remove = vi.spyOn(sessionStorageMock, 'removeItem');
+
+    expect(() => service.saveSession('new-token', { username: 'student' })).toThrow(failure);
+
+    expect(remove.mock.calls).toEqual([['workshop_token'], ['workshop_user']]);
+    expect(sessionStorageMock.getItem('workshop_token')).toBeNull();
+    expect(sessionStorageMock.getItem('workshop_user')).toBeNull();
+    expect(localStorageMock.getItem('workshop_preferences')).toBe('saved-preferences');
+  });
+
+  it('H-11: serializes before writing and preserves the previous session on serialization failure', () => {
+    service.saveSession('previous-token', { username: 'previous' });
+    const failure = new Error('Serialization failed');
+    const user = { username: 'student', toJSON: () => { throw failure; } };
+    const set = vi.spyOn(sessionStorageMock, 'setItem');
+    const remove = vi.spyOn(sessionStorageMock, 'removeItem');
+
+    expect(() => service.saveSession('new-token', user)).toThrow(failure);
+
+    expect(set).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(service.getSession()).toEqual({ token: 'previous-token', user: { username: 'previous' } });
+  });
+
+  it.each([
+    { denied: ['workshop_token'] },
+    { denied: ['workshop_user'] },
+    { denied: ['workshop_token', 'workshop_user'] }
+  ])('H-11: attempts both rollback removals and preserves causes when denied=$denied', ({ denied }) => {
+    const writeFailure = new Error('Write denied');
+    const cleanupFailure = new Error('Cleanup denied');
+    const originalSet = sessionStorageMock.setItem.bind(sessionStorageMock);
+    vi.spyOn(sessionStorageMock, 'setItem').mockImplementation((key, value) => {
+      if (key === 'workshop_user') throw writeFailure;
+      originalSet(key, value);
+    });
+    const originalRemove = sessionStorageMock.removeItem.bind(sessionStorageMock);
+    const remove = vi.spyOn(sessionStorageMock, 'removeItem').mockImplementation((key) => {
+      if (denied.includes(key)) throw cleanupFailure;
+      originalRemove(key);
+    });
+    let caught: unknown;
+    try {
+      service.saveSession('new-token', { username: 'student' });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(remove.mock.calls).toEqual([['workshop_token'], ['workshop_user']]);
+    expect(caught).toBeInstanceOf(AggregateError);
+    if (!(caught instanceof AggregateError)) throw new Error('Expected rollback failure');
+    expect(caught.errors).toEqual([writeFailure, ...denied.map(() => cleanupFailure)]);
+    expect(caught.message).not.toContain('new-token');
+    expect(caught.message).not.toContain('student');
+    expect(sessionStorageMock.getItem('workshop_token')).toBe(
+      denied.includes('workshop_token') ? 'new-token' : null
+    );
+    expect(sessionStorageMock.getItem('workshop_user')).toBeNull();
   });
 
   it('stores and reads authentication data in tab-scoped storage', () => {

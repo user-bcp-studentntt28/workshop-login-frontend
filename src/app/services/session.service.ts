@@ -23,8 +23,28 @@ export class SessionService {
   }
 
   saveSession(token: string, user: AuthenticatedUser): void {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
-    sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
+    const serializedUser = JSON.stringify(user);
+    try {
+      sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+      sessionStorage.setItem(SESSION_USER_KEY, serializedUser);
+    } catch (error: unknown) {
+      this.rollbackSession(error);
+    }
+  }
+
+  private rollbackSession(writeError: unknown): never {
+    const errors: unknown[] = [writeError];
+    for (const key of [SESSION_TOKEN_KEY, SESSION_USER_KEY]) {
+      try {
+        sessionStorage.removeItem(key);
+      } catch (cleanupError: unknown) {
+        errors.push(cleanupError);
+      }
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, 'Session could not be saved or fully cleared');
+    }
+    throw writeError;
   }
 
   getSession(): AuthSession | null {

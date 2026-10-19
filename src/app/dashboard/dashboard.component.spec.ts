@@ -47,6 +47,32 @@ describe('DashboardComponent', () => {
 
     expect(getTasks).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/login']);
+    expect(component.loading).toBe(false);
+    expect(detectChanges).toHaveBeenCalledOnce();
+  });
+
+  it('H-09: handles a session read failure and updates the view', async () => {
+    getSession.mockImplementation(() => { throw new DOMException('Denied', 'SecurityError'); });
+
+    await expect(component.ngOnInit()).resolves.toBeUndefined();
+
+    expect(component.loading).toBe(false);
+    expect(component.error).toBe('No se pudieron cargar las tareas. Inténtalo de nuevo.');
+    expect(detectChanges).toHaveBeenCalledOnce();
+    expect(getTasks).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('H-09: handles a rejected redirect when no session exists', async () => {
+    getSession.mockReturnValue(null);
+    navigate.mockRejectedValue(new Error('Router denied'));
+
+    await expect(component.ngOnInit()).resolves.toBeUndefined();
+
+    expect(component.loading).toBe(false);
+    expect(component.error).toBe('No se pudieron cargar las tareas. Inténtalo de nuevo.');
+    expect(detectChanges).toHaveBeenCalledOnce();
+    expect(getTasks).not.toHaveBeenCalled();
   });
 
   it('loads tasks for the active user and presents service results', async () => {
@@ -82,5 +108,31 @@ describe('DashboardComponent', () => {
 
     expect(clearSession).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('H-10: reports failed cleanup without navigating and permits a successful retry', async () => {
+    clearSession.mockImplementationOnce(() => { throw new Error('Denied'); });
+
+    await expect(component.logout()).resolves.toBeUndefined();
+
+    expect(component.error).toBe('No se pudo cerrar sesión. Inténtalo de nuevo.');
+    expect(detectChanges).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
+
+    await component.logout();
+
+    expect(component.error).toBe('');
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(['/login']);
+  });
+
+  it.each(['reject', 'false'])('H-10: reports navigation %s after cleanup', async (result) => {
+    if (result === 'reject') navigate.mockRejectedValue(new Error('Denied'));
+    else navigate.mockResolvedValue(false);
+
+    await expect(component.logout()).resolves.toBeUndefined();
+
+    expect(clearSession).toHaveBeenCalledOnce();
+    expect(component.error).toBe('No se pudo cerrar sesión. Inténtalo de nuevo.');
+    expect(detectChanges).toHaveBeenCalledOnce();
   });
 });

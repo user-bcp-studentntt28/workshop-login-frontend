@@ -1,7 +1,7 @@
 import '@angular/compiler';
 import { AxiosResponse } from 'axios';
 import axios from 'axios';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthService, InvalidLoginResponseError } from './auth.service';
 import { SessionService } from './session.service';
 
@@ -26,6 +26,29 @@ describe('AuthService', () => {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: new MemoryStorage() });
     session = new SessionService();
     service = new AuthService(session);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('H-11: propagates persistence failure and removes partial session without changing the POST', async () => {
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { token: 'token', user: { username: 'student' } }
+    } as AxiosResponse);
+    const failure = new Error('Write denied');
+    const originalSet = storage.setItem.bind(storage);
+    vi.spyOn(storage, 'setItem').mockImplementation((key, value) => {
+      if (key === 'workshop_user') throw failure;
+      originalSet(key, value);
+    });
+    const request = { username: 'student', password: 'Workshop123!', client: 'angular-workshop' };
+
+    await expect(service.authenticate(request)).rejects.toBe(failure);
+
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      'http://localhost:8080/auth/login', request, { timeout: 5000 }
+    );
+    expect(storage.getItem('workshop_token')).toBeNull();
+    expect(storage.getItem('workshop_user')).toBeNull();
   });
 
   it('preserves the login endpoint, body, timeout, and stores a valid session', async () => {
