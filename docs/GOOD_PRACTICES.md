@@ -11,8 +11,9 @@
   de texto, o `DomSanitizer` explícito si de verdad hace falta HTML.
 - **Configuración por ambiente**: las URLs de los backends van en
   `environment.ts`, nunca hardcodeadas dentro de un componente.
-- **Sesión centralizada**: un único servicio lee/escribe el token y los datos
-  de sesión; ningún componente toca `localStorage` por su cuenta.
+- **Sesión centralizada**: un único servicio conserva los datos de usuario;
+  la credencial vive en una cookie `HttpOnly` administrada por el servidor y
+  ningún componente lee ni almacena el token.
 - **Dependencias**: versiones sin CVEs conocidos (`lodash`, `axios`); preferir
   utilidades nativas del lenguaje o de Angular cuando alcancen.
 - **Errores**: manejo consistente, mensajes al usuario sin exponer detalles

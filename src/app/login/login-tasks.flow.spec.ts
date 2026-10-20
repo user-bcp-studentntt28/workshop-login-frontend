@@ -36,7 +36,7 @@ function httpError(status: number): AxiosError {
   return new AxiosError('Internal detail', 'ERR_BAD_RESPONSE', result.config, undefined, result);
 }
 
-const validLogin = { token: 'fixture-token', user: { username: 'student', displayName: 'Student' } };
+const validLogin = { user: { username: 'student', displayName: 'Student' } };
 const loginError = 'No se pudo iniciar sesión. Inténtalo de nuevo.';
 const tasksError = 'No se pudieron cargar las tareas. Inténtalo de nuevo.';
 const transportErrors = [
@@ -68,7 +68,8 @@ describe('Login and tasks flow with real services', () => {
     });
     session = new SessionService();
     const router = injector.get(Router);
-    login = new LoginComponent(new AuthService(session), session, router);
+    const authService = new AuthService(session);
+    login = new LoginComponent(authService, session, router);
     login.username = 'student';
     login.password = 'Workshop123!';
     dashboard = new DashboardComponent(
@@ -76,7 +77,8 @@ describe('Login and tasks flow with real services', () => {
       injector.get(ChangeDetectorRef),
       injector.get(NgZone),
       session,
-      new TasksService()
+      new TasksService(),
+      authService
     );
   });
 
@@ -98,11 +100,11 @@ describe('Login and tasks flow with real services', () => {
     expect(post).toHaveBeenCalledExactlyOnceWith(
       'http://localhost:8080/auth/login',
       { username: 'student', password: 'Workshop123!', client: 'angular-workshop' },
-      { timeout: 5000 }
+      { timeout: 5000, withCredentials: true }
     );
     expect(get).toHaveBeenCalledExactlyOnceWith(
       'http://localhost:8000/api/tasks?owner=student',
-      { headers: { Authorization: 'Bearer fixture-token' } }
+      { withCredentials: true }
     );
     expect(navigate).toHaveBeenCalledWith(['/dashboard']);
     expect(login.busy).toBe(false);
@@ -114,6 +116,18 @@ describe('Login and tasks flow with real services', () => {
 
     await dashboard.logout();
 
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenLastCalledWith(
+      'http://localhost:8080/auth/logout',
+      null,
+      { withCredentials: true }
+    );
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenLastCalledWith(
+      'http://localhost:8080/auth/logout',
+      null,
+      { withCredentials: true }
+    );
     expect(session.getSession()).toBeNull();
     expect(persistentStorage.getItem('workshop_preferences')).not.toBeNull();
     expect(navigate).toHaveBeenLastCalledWith(['/login']);
@@ -211,7 +225,7 @@ describe('Login and tasks flow with real services', () => {
 
   it.each([
     undefined, null, [], 'not JSON',
-    {}, { user: validLogin.user },
+    {},
     { token: '', user: validLogin.user },
     { token: 42, user: validLogin.user },
     { token: 'token', user: null },
@@ -222,13 +236,13 @@ describe('Login and tasks flow with real services', () => {
 
     await login.login();
 
-    expect(login.message).toBe('El backend respondió sin token.');
+    expect(login.message).toBe('El backend respondió sin una sesión válida.');
     expect(login.busy).toBe(false);
     expect(session.getSession()).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it.each(['workshop_token', 'workshop_user', 'workshop_preferences'])(
+  it.each(['workshop_user', 'workshop_preferences'])(
     'shows a safe error if writing %s fails',
     async (key) => {
       vi.spyOn(axios, 'post').mockResolvedValue(response(validLogin));
@@ -262,7 +276,7 @@ describe('Login and tasks flow with real services', () => {
   it.each([400, 401, 403, 404, 422, 500, 503])(
     'handles tasks HTTP %i without showing backend details',
     async (status) => {
-      session.saveSession(validLogin.token, validLogin.user);
+      session.saveSession(validLogin.user);
       const get = vi.spyOn(axios, 'get').mockRejectedValue(httpError(status));
 
       await dashboard.ngOnInit();
@@ -280,7 +294,7 @@ describe('Login and tasks flow with real services', () => {
   );
 
   it.each(transportErrors)('handles tasks transport failure: %s', async (_name, error) => {
-    session.saveSession(validLogin.token, validLogin.user);
+    session.saveSession(validLogin.user);
     const get = vi.spyOn(axios, 'get').mockRejectedValue(error);
 
     await dashboard.ngOnInit();
@@ -291,7 +305,7 @@ describe('Login and tasks flow with real services', () => {
   });
 
   it('keeps loading while tasks are pending and handles a later transport timeout', async () => {
-    session.saveSession(validLogin.token, validLogin.user);
+    session.saveSession(validLogin.user);
     let rejectRequest: (reason: unknown) => void = () => {
       throw new Error('The pending request has not been created');
     };
@@ -304,7 +318,7 @@ describe('Login and tasks flow with real services', () => {
     expect(dashboard.error).toBe('');
     expect(get).toHaveBeenCalledExactlyOnceWith(
       'http://localhost:8000/api/tasks?owner=student',
-      { headers: { Authorization: 'Bearer fixture-token' } }
+      { withCredentials: true }
     );
     rejectRequest(new AxiosError('Transport timed out', 'ETIMEDOUT'));
     await pending;
@@ -319,7 +333,7 @@ describe('Login and tasks flow with real services', () => {
     [{ title: 3 }], [{ description: false }],
     [{ title: 'Valid', status: 'TODO' }, { status: false }]
   ].map((data) => ({ data })))('rejects unexpected successful tasks data without a partial list: $data', async ({ data }) => {
-    session.saveSession(validLogin.token, validLogin.user);
+    session.saveSession(validLogin.user);
     vi.spyOn(axios, 'get').mockResolvedValue(response(data));
 
     await dashboard.ngOnInit();
@@ -333,7 +347,7 @@ describe('Login and tasks flow with real services', () => {
   it.each([[], [{ title: 'Archived', status: 'ARCHIVED' }]].map((data) => ({ data })))(
     'allows an empty visible tasks list: $data',
     async ({ data }) => {
-      session.saveSession(validLogin.token, validLogin.user);
+      session.saveSession(validLogin.user);
       vi.spyOn(axios, 'get').mockResolvedValue(response(data));
 
       await dashboard.ngOnInit();
@@ -345,7 +359,7 @@ describe('Login and tasks flow with real services', () => {
   );
 
   it('accepts optional/null task fields and keeps equal priorities stable', async () => {
-    session.saveSession(validLogin.token, validLogin.user);
+    session.saveSession(validLogin.user);
     vi.spyOn(axios, 'get').mockResolvedValue(response([
       {},
       { status: null, title: null, description: null, priority: null, owner: null },
@@ -387,18 +401,17 @@ describe('Login and tasks flow with real services', () => {
 
     new SessionService();
 
-    expect(warn).toHaveBeenCalledExactlyOnceWith('Legacy session could not be cleared', failure);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      'Legacy session could not be cleared from persistent storage', failure
+    );
   });
 
   it.each([
-    [null, null],
-    ['token', null],
-    [null, JSON.stringify(validLogin.user)],
-    ['token', '{invalid'],
-    ['token', 'null'],
-    ['token', JSON.stringify({ username: 3 })]
-  ])('redirects without fetching tasks for invalid stored session %j / %j', async (token, user) => {
-    if (token !== null) tabStorage.setItem('workshop_token', token);
+    null,
+    '{invalid',
+    'null',
+    JSON.stringify({ username: 3 })
+  ])('redirects without fetching tasks for invalid stored user state %j', async (user) => {
     if (user !== null) tabStorage.setItem('workshop_user', user);
     const get = vi.spyOn(axios, 'get');
 
@@ -426,12 +439,12 @@ describe('Login and tasks flow with real services', () => {
   );
 
   describe('Approved corrections H-09, H-10, H-11', () => {
-    it.each(['workshop_token', 'workshop_user'])('H-09: controls a read error for %s', async (key) => {
+    it('H-09: controls a read error for user state', async () => {
       const failure = new DOMException('Storage denied', 'SecurityError');
       const get = vi.spyOn(axios, 'get');
       const originalGet = tabStorage.getItem.bind(tabStorage);
       vi.spyOn(tabStorage, 'getItem').mockImplementation((name) => {
-        if (name === key) throw failure;
+        if (name === 'workshop_user') throw failure;
         return originalGet(name);
       });
 
@@ -459,7 +472,8 @@ describe('Login and tasks flow with real services', () => {
     });
 
     it.each(['workshop_token', 'workshop_user', 'navigation', 'navigation-false'])('H-10: controls logout failure at %s', async (stage) => {
-      session.saveSession(validLogin.token, validLogin.user);
+      session.saveSession(validLogin.user);
+      vi.spyOn(axios, 'post').mockResolvedValue(response(null));
       const failure = new Error('Logout failed');
       if (stage === 'navigation-false') {
         navigate.mockResolvedValue(false);

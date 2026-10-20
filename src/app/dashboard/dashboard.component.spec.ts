@@ -7,6 +7,7 @@ import { DashboardComponent } from './dashboard.component';
 describe('DashboardComponent', () => {
   let getSession: ReturnType<typeof vi.fn>;
   let clearSession: ReturnType<typeof vi.fn>;
+  let logout: ReturnType<typeof vi.fn>;
   let getTasks: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let detectChanges: ReturnType<typeof vi.fn>;
@@ -14,10 +15,10 @@ describe('DashboardComponent', () => {
 
   beforeEach(() => {
     getSession = vi.fn().mockReturnValue({
-      token: 'test-token',
       user: { username: 'student' }
     } satisfies AuthSession);
     clearSession = vi.fn();
+    logout = vi.fn(async () => clearSession());
     getTasks = vi.fn().mockResolvedValue({
       tasks: [
         { title: 'Low', description: 'low', status: 'TODO', priority: 'LOW', owner: 'student' },
@@ -36,7 +37,8 @@ describe('DashboardComponent', () => {
       { detectChanges } as never,
       zone as never,
       { getSession, clearSession } as never,
-      { getTasks } as never
+      { getTasks } as never,
+      { logout } as never
     );
   });
 
@@ -78,7 +80,7 @@ describe('DashboardComponent', () => {
   it('loads tasks for the active user and presents service results', async () => {
     await component.ngOnInit();
 
-    expect(getTasks).toHaveBeenCalledWith('student', 'test-token');
+    expect(getTasks).toHaveBeenCalledWith('student');
     expect(component.tasks).toHaveLength(2);
     expect(component.visibleTasks.map((task) => task.title)).toEqual(['Low', 'High']);
     expect(component.user.username).toBe('student');
@@ -106,6 +108,7 @@ describe('DashboardComponent', () => {
   it('clears the session and navigates to login on logout', async () => {
     await component.logout();
 
+    expect(logout).toHaveBeenCalledOnce();
     expect(clearSession).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith(['/login']);
   });
@@ -123,6 +126,15 @@ describe('DashboardComponent', () => {
 
     expect(component.error).toBe('');
     expect(navigate).toHaveBeenCalledExactlyOnceWith(['/login']);
+  });
+
+  it('reports a server logout failure without navigating', async () => {
+    logout.mockRejectedValueOnce(new Error('Request failed'));
+
+    await expect(component.logout()).resolves.toBeUndefined();
+
+    expect(component.error).toBe('No se pudo cerrar sesión. Inténtalo de nuevo.');
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it.each(['reject', 'false'])('H-10: reports navigation %s after cleanup', async (result) => {

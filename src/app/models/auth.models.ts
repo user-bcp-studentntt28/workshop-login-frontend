@@ -11,12 +11,10 @@ export interface AuthenticatedUser {
 }
 
 export interface LoginResponse {
-  token: string;
   user: AuthenticatedUser;
 }
 
 export interface AuthSession {
-  token: string;
   user: AuthenticatedUser;
 }
 

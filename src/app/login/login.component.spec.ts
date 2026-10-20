@@ -61,7 +61,7 @@ describe('LoginComponent', () => {
 
     await component.login();
 
-    expect(component.message).toBe('El backend respondió sin token.');
+    expect(component.message).toBe('El backend respondió sin una sesión válida.');
     expect(navigate).not.toHaveBeenCalled();
     expect(component.busy).toBe(false);
   });

@@ -3,6 +3,7 @@ import { ChangeDetectorRef, Component, NgZone, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthenticatedUser } from '../models/auth.models';
 import { DisplayTask, TaskRecord } from '../models/task.models';
+import { AuthService } from '../services/auth.service';
 import { SessionService } from '../services/session.service';
 import { TasksService } from '../services/tasks.service';
 import { toUserFacingError } from '../utils/api-error';
@@ -34,7 +35,8 @@ export class DashboardComponent implements OnInit {
     private readonly cdr: ChangeDetectorRef,
     private readonly zone: NgZone,
     private readonly sessionService: SessionService,
-    private readonly tasksService: TasksService
+    private readonly tasksService: TasksService,
+    private readonly authService: AuthService
   ) {}
 
   statusLabel(status: string | null | undefined): string {
@@ -57,7 +59,7 @@ export class DashboardComponent implements OnInit {
       }
 
       this.user = session.user;
-      const taskLists = await this.tasksService.getTasks(session.user.username, session.token);
+      const taskLists = await this.tasksService.getTasks(session.user.username);
       this.zone.run(() => {
         this.tasks = taskLists.tasks;
         this.visibleTasks = taskLists.visibleTasks;
@@ -76,7 +78,7 @@ export class DashboardComponent implements OnInit {
   async logout(): Promise<void> {
     try {
       this.error = '';
-      this.sessionService.clearSession();
+      await this.authService.logout();
       const navigated = await this.router.navigate(['/login']);
       if (!navigated) {
         throw new Error('Logout navigation was canceled');

@@ -58,7 +58,7 @@ export class LoginComponent {
       await this.router.navigate(['/dashboard']);
     } catch (error: unknown) {
       this.message = error instanceof InvalidLoginResponseError
-        ? 'El backend respondió sin token.'
+        ? 'El backend respondió sin una sesión válida.'
         : toUserFacingError(error, 'login');
     } finally {
       this.busy = false;
