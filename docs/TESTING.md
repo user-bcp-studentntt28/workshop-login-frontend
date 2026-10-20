@@ -1,5 +1,20 @@
 # Pruebas de login y consulta de tareas
 
+## Sesión HttpOnly y protección CSRF — 2026-10-20
+
+- Frontend: `npm test -- --run` terminó con salida 0: **111 pruebas aprobadas,
+  0 fallidas, 9 archivos**. Verifica que login y tareas envían cookies con
+  `withCredentials`, que la respuesta no expone el token y que logout llama al
+  backend antes de limpiar el estado local.
+- Frontend: `npm run build` terminó con salida 0; build Angular completado.
+- Backend Quarkus: `mvn test` terminó con salida 0: **3 pruebas aprobadas**,
+  incluyendo atributos HttpOnly/SameSite, rechazo de origen no permitido,
+  logout con expiración de cookie y CORS credentialed para el origen permitido.
+- Requirements API: `python -m pytest` terminó con salida 0: **8 pruebas
+  aprobadas**, incluyendo autenticación por cookie, rechazo de Bearer, validación
+  de Origin en escrituras y restricción CORS al origen configurado.
+- No se ejecutó una prueba de navegador con los tres servicios levantados.
+
 ## Correcciones del plan aprobado — 2026-10-19
 
 Esta sección actualiza los resultados históricos del informe de pruebas
@@ -136,23 +151,23 @@ visual necesita las pruebas de navegador propuestas al final.
 
 | flujo | caso | tipo | resultado esperado |
 |---|---|---|---|
-| Login → tareas → logout | Credenciales válidas, respuesta con token/usuario, tareas visibles y archivadas | Camino feliz | POST con cuerpo/timeout exactos; sesión guardada; navegación a dashboard; GET con owner y Bearer; solo tareas no archivadas visibles; logout borra sesión, conserva preferencias y navega a login. |
+| Login → tareas → logout | Credenciales válidas, respuesta con usuario y cookie establecida por el backend | Camino feliz | POST con cuerpo/timeout y `withCredentials`; solo datos del usuario en `sessionStorage`; GET con owner y cookies; solo tareas no archivadas visibles; logout llama al backend para expirar la cookie, conserva preferencias y navega a login. |
 | Login | Usuario vacío o solo espacios | Caso borde | No hay POST ni navegación; mensaje «Ingrese un usuario.»; `busy=false`. |
 | Login | Contraseña vacía o solo espacios | Caso borde | No hay POST ni navegación; mensaje «Ingrese una contraseña.»; `busy=false`. |
-| Login | Respuesta sin token, token vacío o de tipo incorrecto | Caso borde | «El backend respondió sin token.»; no guarda sesión ni navega; termina `busy`. |
+| Login | Respuesta con token en el body o usuario inválido | Caso borde | «El backend respondió sin una sesión válida.»; no guarda sesión ni navega; termina `busy`. |
 | Login | Body ausente, null, array, texto, raíz vacía o usuario inválido | Error | Rechaza la respuesta con el mensaje seguro de respuesta inválida, sin sesión nueva. Incluye username/displayName con tipo incorrecto. |
 | Login | HTTP 401 | Error | «Usuario o contraseña incorrectos.»; no navega ni reintenta. |
 | Login | HTTP 400, 403, 422, 500 y 503 | Error | Mensaje genérico de login; no expone `message/detail` del backend; termina `busy`; una llamada por intento. |
 | Login | Backend caído (`ECONNREFUSED`) | Error | Mensaje genérico; botón vuelve a habilitarse; no navegación ni reintento. |
 | Login | Rechazo de red/CORS (`ERR_NETWORK`) o cancelación | Error | Mismo mensaje genérico; `busy=false`. Se simula el rechazo, no una política CORS real del navegador. |
 | Login | Timeout real de 5000 ms | Error | Mientras espera, `busy=true`; Axios rechaza con `ECONNABORTED`; mensaje genérico y `busy=false`; sin navegación. |
-| Login | Fallo al escribir token, usuario o preferencias | Error | Mensaje genérico; `busy=false`; no solicita navegar. La falta de rollback es H-11, no una corrección validada. |
+| Login | Fallo al escribir usuario o preferencias | Error | Mensaje genérico; `busy=false`; no solicita navegar. La credencial no se escribe en Web Storage. |
 | Login | Promesa de navegación rechazada | Error | Mensaje genérico y `busy=false`; no se afirma rollback de la sesión. |
 | Tareas | Lista vacía o solo archivadas | Caso borde | Lista visible vacía, sin error y `loading=false`. No se afirma haber renderizado el texto de estado vacío. |
 | Tareas | Campos opcionales ausentes/null y prioridades iguales | Caso borde | Acepta la lista; usa etiquetas por defecto y mantiene orden estable entre prioridades iguales. |
 | Tareas | Owner con `+` | Caso borde | El test existente de TasksService verifica `owner=student%2Btrainer`. |
-| Tareas | Sin token/usuario, sesión parcial, JSON inválido o usuario de tipo incorrecto | Error | Limpia las claves; navega a login; no hace GET. |
-| Tareas | Token inválido/expirado representado por HTTP 401 o 403 | Error | «Tu sesión no es válida. Inicia sesión de nuevo.»; `loading=false`; sin tareas visibles ni navegación automática. No se valida criptográficamente un token. |
+| Tareas | Sin usuario serializado, JSON inválido o usuario de tipo incorrecto | Error | Limpia el estado local; navega a login; no hace GET. |
+| Tareas | Cookie inválida/expirada representada por HTTP 401 o 403 | Error | «Tu sesión no es válida. Inicia sesión de nuevo.»; `loading=false`; sin tareas visibles ni navegación automática. |
 | Tareas | HTTP 400, 404, 422, 500 y 503 | Error | Mensaje genérico de tareas; termina la carga; sin detalles internos ni reintento. |
 | Tareas | Backend caído, red/CORS o cancelación | Error | Mensaje genérico y `loading=false`; una llamada. |
 | Tareas | Body ausente/vacío, raíz no array, texto o elementos inválidos | Error | Rechaza toda la lista, incluso si un elemento previo era válido; no presenta resultados parciales. |
@@ -162,7 +177,8 @@ visual necesita las pruebas de navegador propuestas al final.
 | Sesión | No se puede limpiar el almacenamiento legacy | Error | La construcción de SessionService registra `console.warn`. |
 | Tareas | Lectura de sesión denegada | Error / observación H-09 | La prueba reproduce el rechazo no capturado y confirma que no hay GET. La UI controlada sigue pendiente. |
 | Logout | Fallo de limpieza o navegación | Error / observación H-10 | Las dos pruebas reproducen el rechazo no capturado; no certifican un manejo correcto. |
-| Login/sesión | Falla la segunda escritura | Error / observación H-11 | Reproduce token residual sin usuario, aunque el login muestra error; falta implementar rollback. |
+| Sesión | Login devuelve un token en el body | Error | El cliente rechaza la respuesta y no persiste la credencial. |
+| Sesión/CSRF | Solicitud de escritura sin origen permitido | Error | API/backend rechazan la solicitud; CORS permite credenciales solo desde el origen configurado. |
 
 ## Código de las pruebas
 

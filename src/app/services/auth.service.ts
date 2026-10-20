@@ -18,22 +18,27 @@ export class AuthService {
     const response = await axios.post<unknown>(
       `${environment.authApiUrl}/auth/login`,
       request,
-      { timeout: environment.loginTimeoutMs }
+      { timeout: environment.loginTimeoutMs, withCredentials: true }
     );
     const loginResponse = parseLoginResponse(response.data);
-    this.sessionService.saveSession(loginResponse.token, loginResponse.user);
+    this.sessionService.saveSession(loginResponse.user);
+  }
+
+  async logout(): Promise<void> {
+    await axios.post(`${environment.authApiUrl}/auth/logout`, null, { withCredentials: true });
+    this.sessionService.clearSession();
   }
 }
 
 export class InvalidLoginResponseError extends Error {
   constructor() {
-    super('The login response does not contain a valid token and user');
+    super('The login response does not contain a valid user session');
     this.name = 'InvalidLoginResponseError';
   }
 }
 
 function parseLoginResponse(value: unknown): LoginResponse {
-  if (!isRecord(value) || typeof value['token'] !== 'string' || !value['token']) {
+  if (!isRecord(value) || 'token' in value) {
     throw new InvalidLoginResponseError();
   }
 
@@ -42,5 +47,5 @@ function parseLoginResponse(value: unknown): LoginResponse {
     throw new InvalidLoginResponseError();
   }
 
-  return { token: value['token'], user };
+  return { user };
 }

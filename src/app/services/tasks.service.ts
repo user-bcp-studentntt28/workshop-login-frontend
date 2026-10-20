@@ -6,11 +6,9 @@ import { formatTaskLabel } from '../utils/legacy-format';
 
 @Injectable({ providedIn: 'root' })
 export class TasksService {
-  async getTasks(owner: string, token: string): Promise<TaskLists> {
+  async getTasks(owner: string): Promise<TaskLists> {
     const url = `${environment.tasksApiUrl}/api/tasks?owner=${encodeURIComponent(owner)}`;
-    const response = await axios.get<unknown>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const response = await axios.get<unknown>(url, { withCredentials: true });
     const tasks = parseTasks(response.data);
     const visibleTasks = tasks
       .filter((task) => task.status !== 'ARCHIVED')

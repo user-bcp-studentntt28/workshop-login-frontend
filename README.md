@@ -37,4 +37,6 @@ Credenciales de laboratorio:
 
 ## Hallazgos sembrados
 
-Consulta `RETO.md`. El código contiene dependencias vulnerables, token en `localStorage`, URLs hardcodeadas, uso de `innerHTML`, tipos `any`, lógica duplicada y componentes con demasiadas responsabilidades.
+Consulta `RETO.md`. El código contiene dependencias vulnerables, URLs hardcodeadas, uso de `innerHTML`, tipos `any`, lógica duplicada y componentes con demasiadas responsabilidades.
+
+La sesión autenticada se establece mediante una cookie `HttpOnly` desde el backend. El frontend no recibe ni almacena el token; las solicitudes autenticadas usan `withCredentials`.

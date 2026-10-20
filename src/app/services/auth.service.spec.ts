@@ -30,49 +30,27 @@ describe('AuthService', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('H-11: propagates persistence failure and removes partial session without changing the POST', async () => {
+  it('posts login with credentials and stores only user state, not an authentication token', async () => {
     const post = vi.spyOn(axios, 'post').mockResolvedValue({
-      data: { token: 'token', user: { username: 'student' } }
+      data: { user: { username: 'student' }, expiresIn: 3600 }
     } as AxiosResponse);
-    const failure = new Error('Write denied');
-    const originalSet = storage.setItem.bind(storage);
-    vi.spyOn(storage, 'setItem').mockImplementation((key, value) => {
-      if (key === 'workshop_user') throw failure;
-      originalSet(key, value);
-    });
     const request = { username: 'student', password: 'Workshop123!', client: 'angular-workshop' };
 
-    await expect(service.authenticate(request)).rejects.toBe(failure);
+    await service.authenticate(request);
 
     expect(post).toHaveBeenCalledExactlyOnceWith(
-      'http://localhost:8080/auth/login', request, { timeout: 5000 }
-    );
-    expect(storage.getItem('workshop_token')).toBeNull();
-    expect(storage.getItem('workshop_user')).toBeNull();
-  });
-
-  it('preserves the login endpoint, body, timeout, and stores a valid session', async () => {
-    const post = vi.spyOn(axios, 'post').mockResolvedValue({
-      data: { token: 'token', user: { username: 'student' } }
-    } as AxiosResponse);
-
-    await service.authenticate({
-      username: 'student',
-      password: 'Workshop123!',
-      client: 'angular-workshop'
-    });
-
-    expect(post).toHaveBeenCalledWith(
       'http://localhost:8080/auth/login',
-      { username: 'student', password: 'Workshop123!', client: 'angular-workshop' },
-      { timeout: 5000 }
+      request,
+      { timeout: 5000, withCredentials: true }
     );
-    expect(session.getSession()).toEqual({ token: 'token', user: { username: 'student' } });
+    expect(session.getSession()).toEqual({ user: { username: 'student' } });
+    expect(storage.getItem('workshop_token')).toBeNull();
+    expect(storage.getItem('workshop_user')).toBe(JSON.stringify({ username: 'student' }));
   });
 
-  it('rejects a response without a usable token or user', async () => {
+  it('rejects a login response that exposes an authentication token', async () => {
     vi.spyOn(axios, 'post').mockResolvedValue({
-      data: { token: '', user: { username: 'student' } }
+      data: { token: 'unexpected', user: { username: 'student' } }
     } as AxiosResponse);
 
     await expect(service.authenticate({
@@ -85,7 +63,7 @@ describe('AuthService', () => {
 
   it('rejects responses with a user missing the required username', async () => {
     vi.spyOn(axios, 'post').mockResolvedValue({
-      data: { token: 'token', user: { displayName: 'Student' } }
+      data: { user: { displayName: 'Student' } }
     } as AxiosResponse);
 
     await expect(service.authenticate({
@@ -94,5 +72,27 @@ describe('AuthService', () => {
       client: 'angular-workshop'
     })).rejects.toBeInstanceOf(InvalidLoginResponseError);
     expect(session.getSession()).toBeNull();
+  });
+
+  it('logs out through the cookie endpoint and clears local user state', async () => {
+    session.saveSession({ username: 'student' });
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({} as AxiosResponse);
+
+    await service.logout();
+
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      'http://localhost:8080/auth/logout',
+      null,
+      { withCredentials: true }
+    );
+    expect(session.getSession()).toBeNull();
+  });
+
+  it('preserves local session state when the server cannot clear the cookie', async () => {
+    session.saveSession({ username: 'student' });
+    vi.spyOn(axios, 'post').mockRejectedValue(new Error('Network unavailable'));
+
+    await expect(service.logout()).rejects.toThrow('Network unavailable');
+    expect(session.getSession()).toEqual({ user: { username: 'student' } });
   });
 });

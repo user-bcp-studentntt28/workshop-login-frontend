@@ -1,19 +1,22 @@
-# Buenas prácticas — Frontend Angular
+# Buenas prácticas — Backend Quarkus
 
 > Convenciones a las que debe converger el refactor. Se
 > consultan durante el refactor, no después.
 
-- **Tipado estricto**: sin `any`. Interfaces propias para el request y la
-  response de cada endpoint consumido (login, tareas).
-- **Componentes no llaman HTTP directo**: la llamada a `axios`/`HttpClient` vive
-  en un servicio (`AuthService`, `TasksService`); el componente solo lo consume.
-- **Nunca `[innerHTML]` con datos dinámicos sin sanitizar**: usar interpolación
-  de texto, o `DomSanitizer` explícito si de verdad hace falta HTML.
-- **Configuración por ambiente**: las URLs de los backends van en
-  `environment.ts`, nunca hardcodeadas dentro de un componente.
-- **Sesión centralizada**: un único servicio lee/escribe el token y los datos
-  de sesión; ningún componente toca `localStorage` por su cuenta.
-- **Dependencias**: versiones sin CVEs conocidos (`lodash`, `axios`); preferir
-  utilidades nativas del lenguaje o de Angular cuando alcancen.
-- **Errores**: manejo consistente, mensajes al usuario sin exponer detalles
-  internos del backend.
+- **Capas separadas**: Resource (HTTP) → Service (reglas de negocio) →
+  Repository (persistencia). Nada de lógica de negocio ni acceso a datos dentro
+  del Resource.
+- **DTOs propios**: la entidad de persistencia (`UserRecord`) no se devuelve tal
+  cual en la respuesta HTTP; se mapea a un DTO de salida.
+- **Contraseñas**: hash lento con salt (por ejemplo BCrypt). Nunca en texto
+  plano, nunca en logs.
+- **Tokens**: firmados, con expiración y claims explícitos. Nada de Base64
+  casero con un secreto embebido en el código.
+- **Configuración**: variables de entorno o `application.properties`. Ningún
+  secreto hardcodeado en una clase Java.
+- **SQL**: siempre `PreparedStatement` o parámetros nombrados. Nunca
+  concatenación de strings.
+- **Errores**: mensajes genéricos al cliente. El detalle completo (stacktrace,
+  clase de la excepción) va solo al log del servidor, nunca a la respuesta HTTP.
+- **Dependencias**: si CodeQL o Dependency Review marca un CVE, se investiga y
+  se corrige — no se silencia.

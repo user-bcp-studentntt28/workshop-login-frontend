@@ -11,7 +11,7 @@ describe('TasksService', () => {
     service = new TasksService();
   });
 
-  it('preserves the tasks endpoint and authorization header and shapes the visible tasks', async () => {
+  it('preserves the tasks endpoint, sends cookies, and shapes visible tasks', async () => {
     const get = vi.spyOn(axios, 'get').mockResolvedValue({
       data: [
         { title: 'Low', description: 'low', status: 'TODO', priority: 'LOW', owner: 'student' },
@@ -20,10 +20,10 @@ describe('TasksService', () => {
       ]
     } as AxiosResponse);
 
-    const result = await service.getTasks('student', 'token');
+    const result = await service.getTasks('student');
 
     expect(get).toHaveBeenCalledWith('http://localhost:8000/api/tasks?owner=student', {
-      headers: { Authorization: 'Bearer token' }
+      withCredentials: true
     });
     expect(result.tasks).toHaveLength(3);
     expect(result.visibleTasks.map((task) => task.title)).toEqual(['Low', 'High']);
@@ -33,10 +33,10 @@ describe('TasksService', () => {
   it('encodes the owner query parameter without changing the endpoint contract', async () => {
     const get = vi.spyOn(axios, 'get').mockResolvedValue({ data: [] } as AxiosResponse);
 
-    await service.getTasks('student+trainer', 'token');
+    await service.getTasks('student+trainer');
 
     expect(get).toHaveBeenCalledWith('http://localhost:8000/api/tasks?owner=student%2Btrainer', {
-      headers: { Authorization: 'Bearer token' }
+      withCredentials: true
     });
   });
 
@@ -45,8 +45,8 @@ describe('TasksService', () => {
       .mockResolvedValueOnce({ data: { tasks: [] } } as AxiosResponse)
       .mockResolvedValueOnce({ data: [{ status: 3 }] } as AxiosResponse);
 
-    await expect(service.getTasks('student', 'token')).rejects.toBeInstanceOf(InvalidTasksResponseError);
-    await expect(service.getTasks('student', 'token')).rejects.toBeInstanceOf(InvalidTasksResponseError);
+    await expect(service.getTasks('student')).rejects.toBeInstanceOf(InvalidTasksResponseError);
+    await expect(service.getTasks('student')).rejects.toBeInstanceOf(InvalidTasksResponseError);
   });
 
   it('preserves numeric priorities and owners accepted by the existing label formatter', async () => {
@@ -57,7 +57,7 @@ describe('TasksService', () => {
       ]
     } as AxiosResponse);
 
-    const result = await service.getTasks('student', 'token');
+    const result = await service.getTasks('student');
 
     expect(result.visibleTasks.map((task) => task.title)).toEqual(['Two', 'One']);
     expect(result.visibleTasks[0]?.label).toBe('2 · 42');
